@@ -5,7 +5,8 @@ This project implements option pricing models using Rust, focusing on binomial a
 ## Features
 - **CRR (Cox-Ross-Rubinstein) Binomial Tree Model**
 - **KRL (Karatzas-Ruf-Laplace) Trinomial Tree Model**
-<!-- - (haven't implement) Flexible payoff functions (European, American, barrier, etc.) -->
+- (hasn't implement) Combinatorial methods for both Tree models targetting for higher running efficiency
+- (hasn't implement) Flexible payoff functions (European, American, barrier, etc.)
 - Modular code structure for easy extension
 
 ## Project Structure
