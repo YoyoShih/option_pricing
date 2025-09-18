@@ -7,14 +7,14 @@ use tree::OptionStyle;
 // CRR: Cox-Ross-Rubinstein model for option pricing
 // Define the CRR struct
 pub struct CRR {
-    pub tree: Rc<Tree>, // reference to the Tree struct
-    pub u: f64, // up factor
-    pub d: f64, // down factor
-    pub p_u: f64, // probability of up move
-    pub p_d: f64, // probability of down move
-    pub delta_t: f64, // time step
+    tree: Rc<Tree>, // reference to the Tree struct
+    u: f64, // up factor
+    d: f64, // down factor
+    p_u: f64, // probability of up move
+    p_d: f64, // probability of down move
+    delta_t: f64, // time step
     pub n: u32, // number of time steps
-    pub payoff: Box<dyn Fn(f64, f64) -> f64>, // payoff function
+    payoff: Box<dyn Fn(f64, f64) -> f64>, // payoff function
 }
 
 // Implement methods for CRR
