@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use crate::tree::Tree;
 use tree::OptionStyle;
+use tree::CalcMethod;
 
 // CRR: Cox-Ross-Rubinstein model for option pricing
 // Define the CRR struct
@@ -38,7 +39,7 @@ impl CRR {
             payoff,
         }
     }
-    pub fn price(&self) -> f64 {
+    pub fn price(&self, calc_method: &CalcMethod) -> f64 {
         // Calculate the payoff at maturity
         let mut curr: f64 = self.tree.s * self.u.powi(self.n as i32);
         let mut payoffs: Vec<f64> = vec![0.0; (self.n + 1) as usize];

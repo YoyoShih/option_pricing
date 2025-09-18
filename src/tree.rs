@@ -13,6 +13,20 @@ impl Default for OptionStyle {
     }
 }
 
+// Define the CalcMethod enum
+#[derive(PartialEq)]
+pub enum CalcMethod {
+    BackwardInduction,
+    Combinatorial,
+}
+
+// Provide a default implementation for CalcMethod
+impl Default for CalcMethod {
+    fn default() -> Self {
+        CalcMethod::BackwardInduction
+    }
+}
+
 // Define the Tree struct
 pub struct Tree {
     pub s: f64, // initial stock price
