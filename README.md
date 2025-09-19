@@ -5,14 +5,16 @@ This project implements option pricing models using Rust, focusing on binomial a
 ## Features
 - **CRR (Cox-Ross-Rubinstein) Binomial Tree Model**
 - **KRL (Karatzas-Ruf-Laplace) Trinomial Tree Model**
-- (hasn't implement) Combinatorial methods for both Tree models targetting for higher running efficiency
-- (hasn't implement) Flexible payoff functions (European, American, barrier, etc.)
+- (hasn't fully implement) Combinatorial methods for both Tree models targetting for higher running efficiency
+- (hasn't fully implement) Flexible payoff functions (European, American, barrier, etc.)
 - Modular code structure for easy extension
 
 ## Project Structure
 - `src/` — Rust source code
   - `main.rs` — Entry point
-  - `tree.rs` — Core tree models and pricing logic
+  - `tree.rs` — General setting for tree model
+  - `crr.rs` — Core CRR tree models and pricing logic
+  - `krl.rs` — Core KRL tree models and pricing logic
 - `ref/` — Reference files for this project
 - `Cargo.toml` — Rust project configuration
 
@@ -30,10 +32,16 @@ This project implements option pricing models using Rust, focusing on binomial a
 
 ## Example
 ```rust
-let tree = Tree::new(100.0, 100.0, 1.0, 0.05, 0.2, 0.0);
-let crr = CRR::new(Rc::new(tree), 100, Box::new(|s, x| f64::max(s - x, 0.0)));
-let price = crr.price();
-println!("Option price: {}", price);
+fn payoff_function2(price: f64, strike: f64) -> f64 { price - strike }
+
+let euro_tree = Rc::new(Tree::new(100.0, 100.0, 1.0, 0.05, 0.2, 0.0, OptionStyle::European));
+println!("Tree of European option created with initial stock price: {}", euro_tree.s);
+
+let calc_method_bi = CalcMethod::BackwardInduction;
+let euro_crr_bi = CRR::new(Rc::clone(&euro_tree), 10000, Box::new(payoff_function2));
+println!("CRR (Backward Induction) created with {} time steps", euro_crr_bi.n);
+let euro_crr_bi_price = euro_crr_bi.price(&calc_method_bi);
+println!("Option price: {}", euro_crr_bi_price);
 ```
 
 ## References
