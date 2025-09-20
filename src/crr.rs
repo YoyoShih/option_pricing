@@ -40,6 +40,13 @@ impl CRR {
         }
     }
     pub fn price(&self, calc_method: &CalcMethod) -> f64 {
+        let payoff = match calc_method {
+            CalcMethod::BackwardInduction => self.price_backward_induction(),
+            CalcMethod::Combinatorial => self.price_combinatorial(),
+        };
+        payoff
+    }
+    fn price_backward_induction(&self) -> f64 {
         // Calculate the payoff at maturity
         let mut curr: f64 = self.tree.s * self.u.powi(self.n as i32);
         let mut payoffs: Vec<f64> = vec![0.0; (self.n + 1) as usize];
@@ -64,5 +71,28 @@ impl CRR {
             }
         }
         payoffs[0]
+    }
+
+    fn price_combinatorial(&self) -> f64 {
+        if self.tree.style == OptionStyle::European {
+            let mut price: f64 = 0.0;
+            let mut s_t: f64 = self.tree.s * self.u.powi(self.n as i32); // stock price at node (n, n)
+            // Note that here we take log to comb and prob to avoid underflow when n is large
+            let mut log_comb: f64 = 0.0; // log of combination nCi
+            let mut log_prob: f64 = (self.n as f64) * self.p_u.ln(); // log of probability p_u^i * p_d^(n-i)
+
+            for i in 0..=self.n {
+                // Calculate the payoff at maturity
+                let payoff: f64 = f64::max((self.payoff)(s_t, self.tree.x), 0.0);
+                price += (log_comb + log_prob).exp() * payoff;
+                // Update for next i
+                s_t *= self.d * self.d; // s_t = S_0 * u^i * d^(n-i), when i decreases by 1, s_t *= d^2
+                log_comb += ((self.n - i) as f64).ln() - ((i + 1) as f64).ln(); // nCi = nC(i-1) * (n-i+1)/i
+                log_prob += self.p_d.ln() - self.p_u.ln(); // p_u^i * p_d^(n-i) = p_u^(i-1) * p_d^(n-i+1) * (p_d/p_u)
+            }
+            price * (-self.tree.r * self.tree.t).exp()
+        } else {
+            panic!("Combinatorial method is not applicable for American options");
+        }
     }
 }
