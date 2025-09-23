@@ -78,13 +78,13 @@ impl KRL {
         payoffs[0]
     }
 
-    fn c_n_k(&self, n: u32, k: u32) -> u128 {
+    fn log_c_n_k(&self, n: u32, k: u32) -> f64 {
         let k = if k > n - k { n - k } else { k }; // to make k smaller than half of n by C(n, k) == C(n, n-k)
-        let mut c: u128 = 1;
+        let mut log_c: f64 = 0.0;
         for i in 0..k {
-            c = c * (n - i) as u128 / (i + 1) as u128;
+            log_c += ((n - i) as f64).ln() - ((i + 1) as f64).ln();
         }
-        c
+        log_c
     }
 
     fn lower(&self, k: i32, c: i32) -> i32 {
@@ -95,56 +95,76 @@ impl KRL {
         return (((k - c) / 2) as f64).ceil() as i32;
     }
 
+    // Helper for log-sum-exp trick
+    fn log_sum_exp(&self, a: f64, b: f64, sign_a: i8, sign_b: i8) -> f64 {
+        if a.is_infinite() && a.is_sign_negative() { return b; }
+        if b.is_infinite() && b.is_sign_negative() { return a; }
+        if a > b {
+            a + (1.0 + (sign_b as f64) * (b - a).exp()).ln()
+        } else {
+            b + (1.0 + (sign_a as f64) * (a - b).exp()).ln()
+        }
+    }
+
     fn summation<F>(&self, from: i32, to: i32, big_m: F, a: f64, b: f64, v: f64) -> f64
     where
         F: Fn(i32) -> i32,
     {
+        // Precompute logs
+        let log_v = v.ln();
+        let log_p_m = self.p_m.ln();
+        let log_b = b.ln();
+        let log_a = a.ln();
+
         // Calculation for V(c)
-        let mut v_k: f64 = v * self.p_m.powi(self.n as i32 - from as i32) * (self.c_n_k(self.n, from as u32) as f64);
-        let mut omega_k: f64 = 0.0;
-        let mut delta_z: f64 = b.powi(from as i32);
+        let mut log_v_k: f64 = log_v + log_p_m * (self.n as f64 - from as f64) + self.log_c_n_k(self.n, from as u32);
+        let mut log_omega_k: f64 = f64::NEG_INFINITY; // initialization of omega_k in log scale as log(0)
+        let mut log_delta_z: f64 = log_b * (from as f64);
         for z in 0..=(big_m(from)) {
-            omega_k += delta_z;
-            delta_z *= ((from - z) as f64 / (z + 1) as f64) * (a / b);
+            log_omega_k = self.log_sum_exp(log_omega_k, log_delta_z, 1, 1);
+            log_delta_z += ((from - z) as f64).ln() - (1.0 + (z as f64)).ln() + log_a - log_b;
         }
-        omega_k *= v_k;
+        log_omega_k += log_v_k;
         // Initialization of g_k
-        let mut g_k: f64;
+        let mut log_g_k: f64;
+        let mut sign_g_k: i8 = 1;
         // Using the equations to back-calculate g(k - 1) as initial value
         if big_m(from) == big_m(from + 1) {
-            g_k = v_k * a.powi(big_m(from)) * b.powi(from - big_m(from));
+            log_g_k = log_v_k + (big_m(from) as f64 * log_a + (from - big_m(from)) as f64 * log_b);
             // Avoid negative k or M(k) in c(k, M(k))
             if from > 0 && big_m(from) > 0 {
-                g_k *= self.c_n_k((from - 1) as u32, big_m(from) as u32) as f64;
+                log_g_k += self.log_c_n_k((from - 1) as u32, big_m(from) as u32) as f64;
             }
         } else {
-            g_k = v_k * a.powi(big_m(from) + 1) * b.powi(from - big_m(from) - 1);
+            log_g_k = log_v_k + (big_m(from) as f64 * log_a + (from - big_m(from)) as f64 * log_b);
             // Avoid negative k or M(k) in c(k, M(k))
             if from > 0 && big_m(from) > 0 {
-                g_k *= self.c_n_k((from - 1) as u32, big_m(from) as u32) as f64;
+                log_g_k += self.log_c_n_k((from - 1) as u32, big_m(from) as u32) as f64;
             }
         }
         // Summation loop for price
-        let mut price: f64 = 0.0;
+        let mut log_price: f64 = f64::NEG_INFINITY; // initialization of price in log scale as log(0)
         // k: number of Up-Down moves
         for k in from..=to {
             // Calculate the payoff at maturity
-            price += omega_k;
+            log_price = self.log_sum_exp(log_price, log_omega_k, 1, 1);
             // Update for next i
-            let past_v_k: f64 = v_k;
+            let past_log_v_k: f64 = log_v_k;
             // FIX: Use floating-point division for all calculations
-            v_k *= ((self.n as i32 - k) as f64) / (((k + 1) as f64) * self.p_m);
-            let f_k: f64 = (b + a) * ((self.n as i32 - k) as f64 / ((k + 1) as f64 * self.p_m));
+            log_v_k += ((self.n as i32 - k) as f64).ln() - (((k + 1) as f64) * self.p_m).ln();
+            let log_f_k: f64 = (b + a).ln() + ((self.n as i32 - k) as f64).ln() - ((k + 1) as f64).ln() - self.p_m.ln();
             if big_m(k) == big_m(k + 1) {
-                g_k *= -(v_k / past_v_k) * a;
-                g_k *= if k == big_m(k) { 1.0 } else { (k as f64) / ((k - big_m(k)) as f64) };
+                sign_g_k *= -1;
+                log_g_k += log_v_k - past_log_v_k + log_a;
+                log_g_k += if k == big_m(k) { 0.0 } else { (k as f64).ln() - ((k - big_m(k)) as f64).ln() };
             } else {
-                g_k *= -(v_k / past_v_k) * b;
-                g_k *= if k == big_m(k) { 1.0 } else { (k as f64) / (big_m(k) as f64 + 1.0) };
+                sign_g_k *= -1;
+                log_g_k += log_v_k - past_log_v_k + log_b;
+                log_g_k += if k == big_m(k) { 0.0 } else { (k as f64).ln() - (big_m(k) as f64 + 1.0).ln() };
             }
-            omega_k = f_k * omega_k + g_k;
+            log_omega_k = self.log_sum_exp(log_f_k + log_omega_k, log_g_k, 1, sign_g_k);
         }
-        price
+        log_price.exp()
     }
 
     fn price_combinatorial(&self) -> f64 {

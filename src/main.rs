@@ -46,7 +46,7 @@ fn main() {
     println!("CRR (Combinatorial) created with {} time steps", euro_crr_comb.n);
     let euro_crr_comb_price = euro_crr_comb.price(&calc_method_comb);
     println!("Option price: {}", euro_crr_comb_price);
-    let euro_krl_comb = KRL::new(Rc::clone(&euro_tree), 10, Box::new(payoff_function1));
+    let euro_krl_comb = KRL::new(Rc::clone(&euro_tree), 10000, Box::new(payoff_function1));
     println!("KRL (Combinatorial) created with {} time steps", euro_krl_comb.n);
     let euro_krl_comb_price = euro_krl_comb.price(&calc_method_comb);
     println!("Option price: {}", euro_krl_comb_price);
