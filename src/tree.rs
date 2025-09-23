@@ -6,10 +6,22 @@ pub enum OptionStyle {
     European, // default, can only be exercised at maturity
     American, // can be exercised at any time before maturity
 }
-// Provide a default implementation for OptionStyle
-impl Default for OptionStyle {
+#[derive(PartialEq)]
+pub enum OptionType {
+    Call,
+    Put,
+}
+pub struct OptionSpec {
+    pub style: OptionStyle,
+    pub kind: OptionType,
+}
+// Provide a default implementation for OptionSpec
+impl Default for OptionSpec {
     fn default() -> Self {
-        OptionStyle::European
+        OptionSpec {
+            style: OptionStyle::European,
+            kind: OptionType::Call,
+        }
     }
 }
 
