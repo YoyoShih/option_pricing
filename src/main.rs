@@ -13,7 +13,7 @@ use crr::CRR;
 use krl::KRL;
 
 fn main() {
-    let s: f64 = 5.0;
+    let s: f64 = 3.0;
     let x: f64 = 5.0;
     let t: f64 = 1.0;
     let r: f64 = 0.1;
@@ -35,18 +35,18 @@ fn main() {
     // println!("CRR (Backward Induction) created with {} time steps", euro_crr_bi.n);
     // let euro_crr_bi_price = euro_crr_bi.price(&calc_method_bi);
     // println!("Option price: {}", euro_crr_bi_price);
-    // let euro_krl_bi = KRL::new(Rc::clone(&euro_tree), 10000, Box::new(payoff_function1));
+    // let euro_krl_bi = KRL::new(Rc::clone(&euro_tree), 10, Box::new(payoff_function1));
     // println!("KRL (Backward Induction) created with {} time steps", euro_krl_bi.n);
     // let euro_krl_bi_price = euro_krl_bi.price(&calc_method_bi);
     // println!("Option price: {}", euro_krl_bi_price);
 
     // CRR & KRL with 10000 time steps (Combinatorial)
     let calc_method_comb = CalcMethod::Combinatorial;
-    let euro_crr_comb = CRR::new(Rc::clone(&euro_tree), 10000, Box::new(payoff_function1));
+    let euro_crr_comb = CRR::new(Rc::clone(&euro_tree), 100000, Box::new(payoff_function1));
     println!("CRR (Combinatorial) created with {} time steps", euro_crr_comb.n);
     let euro_crr_comb_price = euro_crr_comb.price(&calc_method_comb);
     println!("Option price: {}", euro_crr_comb_price);
-    let euro_krl_comb = KRL::new(Rc::clone(&euro_tree), 10000, Box::new(payoff_function1));
+    let euro_krl_comb = KRL::new(Rc::clone(&euro_tree), 100000, Box::new(payoff_function1));
     println!("KRL (Combinatorial) created with {} time steps", euro_krl_comb.n);
     let euro_krl_comb_price = euro_krl_comb.price(&calc_method_comb);
     println!("Option price: {}", euro_krl_comb_price);
