@@ -59,9 +59,9 @@ impl CRR {
             curr = self.tree.s * self.u.powi((i - 1) as i32);
             for j in 0..i {
                 // European option
-                if self.tree.style == OptionStyle::European {
+                if self.tree.option_spec.style == OptionStyle::European {
                     payoffs[j as usize] = (-self.tree.r * self.delta_t).exp() * (self.p_u * payoffs[j as usize] + self.p_d * payoffs[(j + 1) as usize]);
-                } else if self.tree.style == OptionStyle::American {
+                } else if self.tree.option_spec.style == OptionStyle::American {
                     // American option
                     let exercise_value = f64::max((self.payoff)(curr, self.tree.x), 0.0);
                     let hold_value = (-self.tree.r * self.delta_t).exp() * (self.p_u * payoffs[j as usize] + self.p_d * payoffs[(j + 1) as usize]);
@@ -74,7 +74,7 @@ impl CRR {
     }
 
     fn price_combinatorial(&self) -> f64 {
-        if self.tree.style == OptionStyle::European {
+        if self.tree.option_spec.style == OptionStyle::European {
             let mut price: f64 = 0.0;
             let mut s_t: f64 = self.tree.s * self.u.powi(self.n as i32); // stock price at node (n, n)
             // Note that here we take log to comb and prob to avoid underflow when n is large

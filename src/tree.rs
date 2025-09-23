@@ -47,12 +47,12 @@ pub struct Tree {
     pub r: f64, // risk-free interest rate
     pub sigma: f64, // volatility
     pub q: f64, // dividend yield
-    pub style: OptionStyle, // option style
+    pub option_spec: OptionSpec, // option style
 }
 
 // Implement methods for Tree
 impl Tree {
-    pub fn new(s: f64, x: f64, t: f64, r: f64, sigma: f64, q: f64, style: OptionStyle) -> Self {
-        Tree { s, x, t, r, sigma, q, style }
+    pub fn new(s: f64, x: f64, t: f64, r: f64, sigma: f64, q: f64, option_spec: OptionSpec) -> Self {
+        Tree { s, x, t, r, sigma, q, option_spec }
     }
 }

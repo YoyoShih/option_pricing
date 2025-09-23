@@ -65,9 +65,9 @@ impl KRL {
             curr = self.tree.s * self.u.powi(j as i32);
             for i in 0..=2*j {
                 // European option
-                if self.tree.style == OptionStyle::European {
+                if self.tree.option_spec.style == OptionStyle::European {
                     payoffs[i as usize] = (-self.tree.r * self.delta_t).exp() * (self.p_u * payoffs[i as usize] + self.p_m * payoffs[(i + 1) as usize] + self.p_d * payoffs[(i + 2) as usize]);
-                } else if self.tree.style == OptionStyle::American {
+                } else if self.tree.option_spec.style == OptionStyle::American {
                     // American option
                     let exercise_value = f64::max((self.payoff)(curr, self.tree.x), 0.0);
                     let hold_value = (-self.tree.r * self.delta_t).exp() * (self.p_u * payoffs[i as usize] + self.p_m * payoffs[(i + 1) as usize] + self.p_d * payoffs[(i + 2) as usize]);
@@ -163,7 +163,7 @@ impl KRL {
         // Here the setting is for European Call option for a moment
         let c_l: i32 = cmp::max(((self.tree.x / self.tree.s).ln() / self.u.ln()).ceil() as i32, -(self.n as i32)) as i32;
         let c_u: i32 = self.n as i32;
-        if self.tree.style == OptionStyle::European {
+        if self.tree.option_spec.style == OptionStyle::European {
             if self.tree.s <= self.tree.x {
                 price += self.summation(c_l, c_u, |k| self.lower(k, c_l), a, b, self.tree.s) - self.summation(c_l, c_u, |k| self.lower(k, c_l), self.p_d, self.p_u, self.tree.x);
             } else {

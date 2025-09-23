@@ -1,8 +1,9 @@
+use std::option;
 use std::rc::Rc;
 
 mod tree;
 use tree::Tree;
-use tree::OptionStyle;
+use tree::OptionSpec;
 use tree::CalcMethod;
 
 // Declare the crr & krl module
@@ -26,7 +27,8 @@ fn main() {
     // fn payoff_function2(price: f64, strike: f64) -> f64 { (price - 4.0) * (price - 5.0) * (price - 6.0) * (price - 7.0) + 5.0 - strike }
 
     // European Option
-    let euro_tree = Rc::new(Tree::new(s, x, t, r, sigma, q, OptionStyle::European));
+    let euro_option_spec = OptionSpec { style: tree::OptionStyle::European, kind: tree::OptionType::Call };
+    let euro_tree = Rc::new(Tree::new(s, x, t, r, sigma, q, euro_option_spec));
     println!("Tree of European option created with initial stock price: {}", euro_tree.s);
 
     // // CRR & KRL with 10000 time steps (Backward Induction)
@@ -52,7 +54,8 @@ fn main() {
     println!("Option price: {}", euro_krl_comb_price);
 
     // // American Option
-    // let amer_tree = Rc::new(Tree::new(s, x, t, r, sigma, q, OptionStyle::American));
+    // let amer_option_spec = OptionSpec { style: tree::OptionStyle::American, kind: tree::OptionType::Call };
+    // let amer_tree = Rc::new(Tree::new(s, x, t, r, sigma, q, amer_option_spec));
     // println!("Tree of American option created with initial stock price: {}", amer_tree.s);
 
     // // CRR & KRL with 10000 time steps (Backward Induction)
