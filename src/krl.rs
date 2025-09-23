@@ -137,28 +137,21 @@ impl KRL {
         for k in from..=to {
             // Calculate the payoff at maturity
             log_price = self.log_sum_exp(log_price, log_omega_k, 1, 1);
-            // println!("k: {}, omega_k: {}", k, log_omega_k.exp());
             // Update for next i
             let past_log_v_k: f64 = log_v_k;
             log_v_k += ((self.n as i32 - k) as f64).ln() - (((k + 1) as f64) * self.p_m).ln();
             let log_f_k: f64 = (b + a).ln() + ((self.n as i32 - k) as f64).ln() - ((k + 1) as f64).ln() - self.p_m.ln();
-            // println!("f_k: {}, ", log_f_k.exp());
-            // println!("{}, {}", big_m(k), big_m(k + 1));
             if big_m(k) == big_m(k + 1) {
-                // print!("a: ");
                 log_g_k += log_v_k - past_log_v_k + log_a;
                 log_g_k += if k == big_m(k) { 0.0 } else { (k as f64).ln() - ((k - big_m(k)) as f64).ln() };
             } else {
-                // print!("b: ");
                 log_g_k += log_v_k - past_log_v_k + log_b;
                 log_g_k += if k == big_m(k) { 0.0 } else { (k as f64).ln() - (big_m(k) as f64 + 1.0).ln() };
             }
-            // println!("g_k: {}, sign_g_k: {}", log_g_k.exp(), sign_g_k);
             log_omega_k = self.log_sum_exp(log_f_k + log_omega_k, log_g_k, 1, sign_g_k);
             // Update for next k
             sign_g_k *= -1;
         }
-        // println!("from: {}, to: {}, price: {}", from, to, log_price.exp());
         log_price.exp()
     }
 
@@ -170,10 +163,6 @@ impl KRL {
         // Here the setting is for European Call option for a moment
         let c_l: i32 = cmp::max(((self.tree.x / self.tree.s).ln() / self.u.ln()).ceil() as i32, -(self.n as i32)) as i32;
         let c_u: i32 = self.n as i32;
-        // println!("{}", 3.0 * self.p_m * a * b * self.tree.s);
-        // println!("{}", self.tree.s * 3.0 * self.p_m.powi(2) * (b));
-        // println!("{}", self.tree.s * (3.0 * self.p_m * (b.powi(2) + 2.0 * b * a)));
-        // println!("{}", self.tree.s * ((b.powi(3) + 3.0 * b.powi(2) * a)));
         if self.tree.style == OptionStyle::European {
             if self.tree.s <= self.tree.x {
                 price += self.summation(c_l, c_u, |k| self.lower(k, c_l), a, b, self.tree.s) - self.summation(c_l, c_u, |k| self.lower(k, c_l), self.p_d, self.p_u, self.tree.x);
@@ -183,9 +172,6 @@ impl KRL {
                 price += self.summation(0, c_u, |k| self.lower(k, 0), a, b, self.tree.s) - self.summation(0, c_u, |k| self.lower(k, 0), self.p_d, self.p_u, self.tree.x);
                 // c_l to -1
                 price += self.summation(-c_l, self.n as i32, |k| self.lower(k, c_l), a, b, self.tree.s) - self.summation(-c_l, self.n as i32, |k| self.lower(k, c_l), self.p_d, self.p_u, self.tree.x);
-                // println!("{}", self.summation(-c_l, self.n as i32, |k| self.lower(k, c_l), a, b, self.tree.s));
-                // println!("=======");
-                // println!("{}", self.summation(-c_l, self.n as i32, |k| self.upper(k, -1) - 1, a, b, self.tree.s));
                 price -= self.summation(-c_l, self.n as i32, |k| self.upper(k, -1) - 1, a, b, self.tree.s) - self.summation(-c_l, self.n as i32, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x);
                 price += self.summation(1, -c_l - 1, |k| k, a, b, self.tree.s) - self.summation(1, -c_l - 1, |k| k, self.p_d, self.p_u, self.tree.x);
                 price -= self.summation(1, -c_l - 1, |k| self.upper(k, -1) - 1, a, b, self.tree.s) - self.summation(1, -c_l - 1, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x);
