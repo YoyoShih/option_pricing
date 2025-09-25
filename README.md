@@ -1,11 +1,11 @@
 # Option Pricing in Rust
 
-This project implements option pricing models using Rust, focusing on binomial and trinomial lattice methods. It is designed for educational and research purposes, providing efficient and robust algorithms for pricing vanilla and exotic options.
+This project implements option pricing models (according to reference papers, see ref/ folder for more information) using Rust, focusing on binomial and trinomial lattice methods. It is designed for educational and research purposes, providing efficient and robust algorithms for pricing vanilla and exotic options.
 
 ## Features
 - **CRR (Cox-Ross-Rubinstein) Binomial Tree Model**
 - **KRL (Karatzas-Ruf-Laplace) Trinomial Tree Model**
-- (hasn't fully implement) Combinatorial methods for both Tree models targetting for higher running efficiency
+- Combinatorial methods for both Tree models targetting for higher running efficiency
 - (hasn't fully implement) Flexible payoff functions (European, American, barrier, etc.)
 - Modular code structure for easy extension
 
