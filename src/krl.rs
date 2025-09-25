@@ -2,6 +2,8 @@ use std::f64;
 use std::cmp;
 use std::rc::Rc;
 
+use crate::utils::SignedLog;
+
 use crate::tree::Tree;
 use tree::OptionStyle;
 use tree::OptionType;
@@ -88,21 +90,9 @@ impl KRL {
         log_c
     }
 
-    fn lower(&self, k: i32, c: i32) -> i32 {
-        return ((k - c) as f64 / 2.0).floor() as i32;
-    }
+    fn lower(&self, k: i32, c: i32) -> i32 { ((k - c) as f64 / 2.0).floor() as i32 }
 
-    fn upper(&self, k: i32, c: i32) -> i32 {
-        return ((k - c) as f64 / 2.0).ceil() as i32;
-    }
-
-    // Helper for log-sum-exp trick
-    fn log_sum_exp(&self, a: f64, b: f64, sign_a: i8, sign_b: i8) -> f64 {
-        if a.is_infinite() && a.is_sign_negative() { return b; }
-        if b.is_infinite() && b.is_sign_negative() { return a; }
-        if a > b { a + (1.0 + (sign_b as f64) * (b - a).exp()).ln() }
-        else { b + (1.0 + (sign_a as f64) * (a - b).exp()).ln() }
-    }
+    fn upper(&self, k: i32, c: i32) -> i32 { ((k - c) as f64 / 2.0).ceil() as i32 }
 
     fn summation<F>(&self, from: i32, to: i32, big_m: F, a: f64, b: f64, v: f64) -> f64
     where
@@ -117,51 +107,52 @@ impl KRL {
 
         // Calculation for V(c)
         let mut log_v_k: f64 = log_v + log_p_m * (self.n as f64 - from as f64) + self.log_c_n_k(self.n, from as u32);
-        let mut log_omega_k: f64 = f64::NEG_INFINITY; // initialization of omega_k in log scale as log(0)
-        let mut log_delta_z: f64 = log_b * (from as f64);
+        let mut omega_k = SignedLog { sign: 0, log_value: f64::NEG_INFINITY };
+        let mut delta_z = SignedLog { sign: 1, log_value: log_b * (from as f64) };
         for z in 0..=(big_m(from)) {
-            log_omega_k = self.log_sum_exp(log_omega_k, log_delta_z, 1, 1);
-            log_delta_z += ((from - z) as f64).ln() - (1.0 + (z as f64)).ln() + log_a - log_b;
+            omega_k = SignedLog::log_sum(&omega_k, &delta_z);
+            let next_log = ((from - z) as f64).ln() - (1.0 + (z as f64)).ln() + log_a - log_b;
+            delta_z = SignedLog { sign: delta_z.sign, log_value: delta_z.log_value + next_log };
         }
-        log_omega_k += log_v_k;
+        omega_k.log_value += log_v_k;
         // Initialization of g_k
-        let mut log_g_k: f64;
+        let mut g_k: SignedLog;
         if big_m(from) == big_m(from + 1) {
-            log_g_k = log_v_k + (big_m(from) as f64 * log_a + (from - big_m(from)) as f64 * log_b);
+            g_k = SignedLog { sign: 1, log_value: log_v_k + (big_m(from) as f64 * log_a + (from - big_m(from)) as f64 * log_b) };
         } else {
-            log_g_k = log_v_k + ((big_m(from) + 1) as f64 * log_a + (from - big_m(from) - 1) as f64 * log_b);
+            g_k = SignedLog { sign: 1, log_value: log_v_k + ((big_m(from) + 1) as f64 * log_a + (from - big_m(from) - 1) as f64 * log_b) };
         }
-        log_g_k += self.log_c_n_k((from - 1) as u32, big_m(from) as u32) as f64;
+        g_k.log_value += self.log_c_n_k((from - 1) as u32, big_m(from) as u32);
         // If big_m(from) == big_m(from + 1), sign should be negative
-        let mut sign_g_k: i8 = (-1f64).powi(big_m(from + 1) - big_m(from) - 1) as i8;
+        g_k.sign = (-1f64).powi(big_m(from + 1) - big_m(from) - 1) as i8;
         // Summation loop for price
-        let mut log_price: f64 = f64::NEG_INFINITY; // initialization of price in log scale as log(0)
+        let mut price = SignedLog { sign: 0, log_value: f64::NEG_INFINITY };
         // k: number of Up-Down moves
         for k in from..=to {
             // Calculate the payoff at maturity
-            log_price = self.log_sum_exp(log_price, log_omega_k, 1, 1);
+            price = SignedLog::log_sum(&price, &omega_k);
             // Update for next i
-            let past_log_v_k: f64 = log_v_k;
+            let past_log_v_k = log_v_k;
             log_v_k += ((self.n as i32 - k) as f64).ln() - (((k + 1) as f64) * self.p_m).ln();
-            let log_f_k: f64 = (b + a).ln() + ((self.n as i32 - k) as f64).ln() - ((k + 1) as f64).ln() - self.p_m.ln();
-            // g_k = 0 when big_m(k) == k
+            let log_f_k = (b + a).ln() + ((self.n as i32 - k) as f64).ln() - ((k + 1) as f64).ln() - self.p_m.ln();
             if big_m(k) == big_m(k + 1) {
-                log_g_k += log_v_k - past_log_v_k + log_a;
-                log_g_k += if k == big_m(k) { 0.0 } else { (k as f64).ln() - ((k - big_m(k)) as f64).ln() };
+                g_k.log_value += log_v_k - past_log_v_k + log_a;
+                // g_k = 0 when big_m(k) == k
+                g_k.log_value += if k == big_m(k) { 0.0 } else { (k as f64).ln() - ((k - big_m(k)) as f64).ln() };
             } else {
-                log_g_k += log_v_k - past_log_v_k + log_b;
-                log_g_k += if big_m(k) == -1 { 0.0 } else { (k as f64).ln() - (big_m(k) as f64 + 1.0).ln() };
+                g_k.log_value += log_v_k - past_log_v_k + log_b;
+                // g_k = 0 when big_m(k) == -1
+                g_k.log_value += if big_m(k) == -1 { 0.0 } else { (k as f64).ln() - (big_m(k) as f64 + 1.0).ln() };
             }
             if big_m(k) == k && big_m(k + 1) == k + 1 {
-                log_omega_k = log_f_k + log_omega_k;
+                omega_k.log_value += log_f_k;
             } else {
-                log_omega_k = self.log_sum_exp(log_f_k + log_omega_k, log_g_k, 1, sign_g_k);
+                omega_k = SignedLog::log_sum(&SignedLog { sign: 1, log_value: log_f_k + omega_k.log_value }, &g_k);
             }
-            
             // Update for next k
-            sign_g_k *= -1;
+            g_k.sign *= -1;
         }
-        log_price.exp()
+        price.sign as f64 * price.log_value.exp()
     }
 
     fn price_combinatorial(&self) -> f64 {
@@ -169,48 +160,57 @@ impl KRL {
         let a: f64 = self.d * self.p_d;
         let b: f64 = self.u * self.p_u;
         // Calculate the critical bound for positive payoff
-        if self.tree.option_spec.kind == OptionType::Call {
-            // Here the setting is for European Call option for a moment
-            let c_l: i32 = cmp::max(((self.tree.x / self.tree.s).ln() / self.u.ln()).ceil() as i32, -(self.n as i32)) as i32;
-            let c_u: i32 = self.n as i32;
-            if self.tree.option_spec.style == OptionStyle::European {
-                if self.tree.s <= self.tree.x {
-                    price += self.summation(c_l, self.n as i32, |k| self.lower(k, c_l), a, b, self.tree.s) - self.summation(c_l, self.n as i32, |k| self.lower(k, c_l), self.p_d, self.p_u, self.tree.x);
-                } else {
-                    // Decompose the summation into two parts: c_l to -1 and 0 to c_u = n
-                    // 0 to c_u
-                    price += self.summation(0, c_u, |k| self.lower(k, 0), a, b, self.tree.s) - self.summation(0, c_u, |k| self.lower(k, 0), self.p_d, self.p_u, self.tree.x);
-                    // c_l to -1
-                    price += self.summation(-c_l, self.n as i32, |k| self.lower(k, c_l), a, b, self.tree.s) - self.summation(-c_l, self.n as i32, |k| self.lower(k, c_l), self.p_d, self.p_u, self.tree.x);
-                    price -= self.summation(-c_l, self.n as i32, |k| self.upper(k, -1) - 1, a, b, self.tree.s) - self.summation(-c_l, self.n as i32, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x);
-                    price += self.summation(1, -c_l - 1, |k| k, a, b, self.tree.s) - self.summation(1, -c_l - 1, |k| k, self.p_d, self.p_u, self.tree.x);
-                    price -= self.summation(1, -c_l - 1, |k| self.upper(k, -1) - 1, a, b, self.tree.s) - self.summation(1, -c_l - 1, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x);
+        match self.tree.option_spec.kind {
+            OptionType::Call => {
+                // Here the setting is for European Call option for a moment
+                let c_l: i32 = cmp::max(((self.tree.x / self.tree.s).ln() / self.u.ln()).ceil() as i32, -(self.n as i32)) as i32;
+                let c_u: i32 = self.n as i32;
+                match self.tree.option_spec.style {
+                    OptionStyle::European => {
+                        if self.tree.s <= self.tree.x {
+                            price += self.summation(c_l, self.n as i32, |k| self.lower(k, c_l), a, b, self.tree.s) - self.summation(c_l, self.n as i32, |k| self.lower(k, c_l), self.p_d, self.p_u, self.tree.x);
+                        } else {
+                            // Decompose the summation into two parts: c_l to -1 and 0 to c_u = n
+                            // 0 to c_u
+                            price += self.summation(0, c_u, |k| self.lower(k, 0), a, b, self.tree.s) - self.summation(0, c_u, |k| self.lower(k, 0), self.p_d, self.p_u, self.tree.x);
+                            // c_l to -1
+                            price += self.summation(-c_l, self.n as i32, |k| self.lower(k, c_l), a, b, self.tree.s) - self.summation(-c_l, self.n as i32, |k| self.lower(k, c_l), self.p_d, self.p_u, self.tree.x);
+                            price -= self.summation(-c_l, self.n as i32, |k| self.upper(k, -1) - 1, a, b, self.tree.s) - self.summation(-c_l, self.n as i32, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x);
+                            price += self.summation(1, -c_l - 1, |k| k, a, b, self.tree.s) - self.summation(1, -c_l - 1, |k| k, self.p_d, self.p_u, self.tree.x);
+                            price -= self.summation(1, -c_l - 1, |k| self.upper(k, -1) - 1, a, b, self.tree.s) - self.summation(1, -c_l - 1, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x);
+                        }
+                        price * (-self.tree.r * self.tree.t).exp()
+                    }
+                    OptionStyle::American => {
+                        panic!("Combinatorial method is not applicable for American options");
+                    }
                 }
-                price * (-self.tree.r * self.tree.t).exp()
-            } else {
-                panic!("Combinatorial method is not applicable for American options");
             }
-        } else {
-            // Here the setting is for European Put option for a moment
-            let c_l: i32 = -(self.n as i32);
-            let c_u: i32 = cmp::max(((self.tree.x / self.tree.s).ln() / self.u.ln()).floor() as i32, -(self.n as i32)) as i32;
-            if self.tree.option_spec.style == OptionStyle::European {
-                if self.tree.s >= self.tree.x {
-                    price += self.summation(-c_u, -c_l, |k| k, self.p_d, self.p_u, self.tree.x) - self.summation(-c_u, -c_l, |k| k, a, b, self.tree.s);
-                    price -= self.summation(-c_u, -c_l, |k| self.upper(k, c_u) - 1, self.p_d, self.p_u, self.tree.x) - self.summation(-c_u, -c_l, |k| self.upper(k, c_u) - 1, a, b, self.tree.s);
-                } else {
-                    // Decompose the summation into two parts: -n = c_l to -1 and 0 to c_u
-                    // 0 to c_u
-                    price += self.summation(c_u, self.n as i32, |k| self.lower(k, 0), self.p_d, self.p_u, self.tree.x) - self.summation(c_u, self.n as i32, |k| self.lower(k, 0), a, b, self.tree.s);
-                    price -= self.summation(c_u, self.n as i32, |k| self.upper(k, c_u) - 1, self.p_d, self.p_u, self.tree.x) - self.summation(c_u, self.n as i32, |k| self.upper(k, c_u) - 1, a, b, self.tree.s);
-                    price += self.summation(0, c_u - 1, |k| self.lower(k, 0), self.p_d, self.p_u, self.tree.x) - self.summation(0, c_u - 1, |k| self.lower(k, 0), a, b, self.tree.s);
-                    // c_l to -1
-                    price += self.summation(1, -c_l, |k| k, self.p_d, self.p_u, self.tree.x) - self.summation(1, -c_l, |k| k, a, b, self.tree.s);
-                    price -= self.summation(1, -c_l, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x) - self.summation(1, -c_l, |k| self.upper(k, -1) - 1, a, b, self.tree.s);
+        OptionType::Put => {
+                // Here the setting is for European Put option for a moment
+                let c_l: i32 = -(self.n as i32);
+                let c_u: i32 = cmp::max(((self.tree.x / self.tree.s).ln() / self.u.ln()).floor() as i32, -(self.n as i32)) as i32;
+                match self.tree.option_spec.style {
+                    OptionStyle::European => {
+                        if self.tree.s >= self.tree.x {
+                            price += self.summation(-c_u, -c_l, |k| k, self.p_d, self.p_u, self.tree.x) - self.summation(-c_u, -c_l, |k| k, a, b, self.tree.s);
+                            price -= self.summation(-c_u, -c_l, |k| self.upper(k, c_u) - 1, self.p_d, self.p_u, self.tree.x) - self.summation(-c_u, -c_l, |k| self.upper(k, c_u) - 1, a, b, self.tree.s);
+                        } else {
+                            // Decompose the summation into two parts: -n = c_l to -1 and 0 to c_u
+                            // 0 to c_u
+                            price += self.summation(c_u, self.n as i32, |k| self.lower(k, 0), self.p_d, self.p_u, self.tree.x) - self.summation(c_u, self.n as i32, |k| self.lower(k, 0), a, b, self.tree.s);
+                            price -= self.summation(c_u, self.n as i32, |k| self.upper(k, c_u) - 1, self.p_d, self.p_u, self.tree.x) - self.summation(c_u, self.n as i32, |k| self.upper(k, c_u) - 1, a, b, self.tree.s);
+                            price += self.summation(0, c_u - 1, |k| self.lower(k, 0), self.p_d, self.p_u, self.tree.x) - self.summation(0, c_u - 1, |k| self.lower(k, 0), a, b, self.tree.s);
+                            // c_l to -1
+                            price += self.summation(1, -c_l, |k| k, self.p_d, self.p_u, self.tree.x) - self.summation(1, -c_l, |k| k, a, b, self.tree.s);
+                            price -= self.summation(1, -c_l, |k| self.upper(k, -1) - 1, self.p_d, self.p_u, self.tree.x) - self.summation(1, -c_l, |k| self.upper(k, -1) - 1, a, b, self.tree.s);
+                        }
+                        price * (-self.tree.r * self.tree.t).exp()
+                    }
+                    OptionStyle::American => {
+                        panic!("Combinatorial method is not applicable for American options");
+                    }
                 }
-                price * (-self.tree.r * self.tree.t).exp()
-            } else {
-                panic!("Combinatorial method is not applicable for American options");
             }
         }
     }

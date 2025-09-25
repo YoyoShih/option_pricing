@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 mod tree;
+mod utils;
 use tree::Tree;
 use tree::OptionSpec;
 use tree::CalcMethod;
@@ -13,12 +14,12 @@ use crr::CRR;
 use krl::KRL;
 
 fn main() {
-    let s: f64 = 6.0;
-    let x: f64 = 5.0;
-    let t: f64 = 1.0;
-    let r: f64 = 0.1;
-    let sigma: f64 = 0.25;
-    let q: f64 = 0.0;
+    let s: f64 = 6.0; // Stock price
+    let x: f64 = 5.0; // Strike price
+    let t: f64 = 1.0; // Time to maturity in years
+    let r: f64 = 0.1; // Risk-free interest rate
+    let sigma: f64 = 0.25; // Volatility of the underlying stock
+    let q: f64 = 0.0; // Dividend yield
 
     // Pure payoff functions for Experiments
     // Note that "the comparison to 0" is done in the pricing functions, not here in these functions
