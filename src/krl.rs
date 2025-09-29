@@ -1,6 +1,7 @@
 use std::f64;
 use std::cmp;
 use std::rc::Rc;
+use std::vec;
 
 use crate::utils::SignedLog;
 
@@ -8,6 +9,7 @@ use crate::tree::Tree;
 use tree::OptionStyle;
 use tree::OptionType;
 use tree::CalcMethod;
+use tree::FiniteDifferenceType;
 
 // KRL: Karatzas-Ruf-Laplace model for option pricing
 // Define the KRL struct
@@ -52,6 +54,12 @@ impl KRL {
         let payoff = match calc_method {
             CalcMethod::BackwardInduction => self.price_backward_induction(),
             CalcMethod::Combinatorial => self.price_combinatorial(),
+            CalcMethod::FiniteDifference{ kind, n_s, n_t, s_max, s_min } => {
+                match kind {
+                    FiniteDifferenceType::Explicit => self.price_finite_difference_explicit(*n_s, *n_t, *s_min, *s_max),
+                    FiniteDifferenceType::Implicit => self.price_finite_difference_implicit(*n_s, *n_t, *s_min, *s_max),
+                }
+            },
         };
         payoff
     }
@@ -94,6 +102,7 @@ impl KRL {
 
     fn upper(&self, k: i32, c: i32) -> i32 { ((k - c) as f64 / 2.0).ceil() as i32 }
 
+    // Helper function for combinatorial pricing
     fn summation<F>(&self, from: i32, to: i32, big_m: F, a: f64, b: f64, v: f64) -> f64
     where
         F: Fn(i32) -> i32,
@@ -155,6 +164,7 @@ impl KRL {
         price.sign as f64 * price.log_value.exp()
     }
 
+    // Combinatorial pricing method
     fn price_combinatorial(&self) -> f64 {
         let mut price: f64 = 0.0;
         let a: f64 = self.d * self.p_d;
@@ -209,6 +219,101 @@ impl KRL {
                     }
                     OptionStyle::American => {
                         panic!("Combinatorial method is not applicable for American options");
+                    }
+                }
+            }
+        }
+    }
+
+    // Finite Difference pricing method
+    // Explicit method
+    fn price_finite_difference_explicit(&self, n_s: u32, n_t: u32, s_min: f64, s_max: f64) -> f64 {
+        let delta_s: f64 = (s_max - s_min) / n_s as f64;
+        let delta_t: f64 = self.tree.t / n_t as f64;
+        let sigma_sqr: f64 = self.tree.sigma.powi(2);
+        let s0_index: i32 = ((self.tree.s - s_min) / delta_s).floor() as i32;
+
+        if delta_s * s0_index as f64 + s_min != self.tree.s {
+            panic!("Finite Difference method requires the initial stock price to be on the grid points");
+        } else {
+            match self.tree.option_spec.kind {
+                OptionType::Call => {
+                    match self.tree.option_spec.style {
+                        OptionStyle::European => {
+                            let r1: f64 = 1.0 / (1.0 + self.tree.r * delta_t);
+                            let r2: f64 = delta_t / (1.0 + self.tree.r * delta_t);
+                            let mut grid: Vec<Vec<f64>> = vec![vec![0.0; n_s as usize]; 3];
+                            for i in 0..n_s {
+                                grid[0][i as usize] = r2 * 0.5 * i as f64 * (-(self.tree.r - self.tree.q) + sigma_sqr * i as f64);
+                                grid[1][i as usize] = r1 * (1.0 - sigma_sqr * i.pow(2) as f64 * delta_t);
+                                grid[2][i as usize] = r2 * 0.5 * i as f64 * (self.tree.r - self.tree.q + sigma_sqr * i as f64);
+                            }
+                            let mut s_t: Vec<f64> = vec![0.0; (n_s + 1) as usize];
+                            let mut value: Vec<f64> = vec![0.0; (n_s + 1) as usize];
+                            for i in 0..=n_s {
+                                let curr = delta_s * i as f64 + s_min;
+                                s_t[i as usize] = f64::max((self.payoff)(curr, self.tree.x), 0.0);
+                            }
+                            for i in 0..n_t {
+                                value[0] = f64::max((self.payoff)(s_min, self.tree.x), 0.0);
+                                for j in 1..n_s {
+                                    value[j as usize] = grid[0][j as usize] * s_t[j as usize - 1] + grid[1][j as usize] * s_t[j as usize] + grid[2][j as usize] * s_t[j as usize + 1];
+                                }
+                                value[n_s as usize] = f64::max((self.payoff)(s_max, self.tree.x), 0.0);
+                                for j in 0..=n_s {
+                                    s_t[j as usize] = f64::max(value[j as usize], 0.0);
+                                }
+                            }
+                            return value[s0_index as usize];
+                        }
+                        OptionStyle::American => {
+                            panic!("Finite Difference Explicit method is not implemented for American Call in KRL");
+                        }
+                    }
+                }
+                OptionType::Put => {
+                    match self.tree.option_spec.style {
+                        OptionStyle::European => {
+                            panic!("Finite Difference Explicit method is not implemented for European Put in KRL");
+                        }
+                        OptionStyle::American => {
+                            panic!("Finite Difference Explicit method is not implemented for American Put in KRL");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Implicit method (not implemented)
+    fn price_finite_difference_implicit(&self, n_s: u32, n_t: u32, s_max: f64, s_min: f64) -> f64 {
+        let delta_s: f64 = (s_max - s_min) / n_s as f64;
+        let delta_t: f64 = self.tree.t / n_t as f64;
+        let sigma_sqr: f64 = self.tree.sigma * self.tree.sigma;
+        let s0_index: i32 = ((self.tree.s - s_min) / delta_s).floor() as i32;
+
+        if delta_s * s0_index as f64 + s_min != self.tree.s {
+            panic!("Finite Difference method requires the initial stock price to be on the grid points");
+        } else {
+            match self.tree.option_spec.kind {
+                OptionType::Call => {
+                    match self.tree.option_spec.style {
+                        OptionStyle::European => {
+                            panic!("Finite Difference Implicit method is not implemented for European Call in KRL");
+                        }
+                        OptionStyle::American => {
+                            panic!("Finite Difference Implicit method is not implemented for American Call in KRL");
+                        }
+                    }
+                }
+                OptionType::Put => {
+                    match self.tree.option_spec.style {
+                        OptionStyle::European => {
+                            panic!("Finite Difference Implicit method is not implemented for European Put in KRL");
+                        }
+                        OptionStyle::American => {
+                            panic!("Finite Difference Implicit method is not implemented for American Put in KRL");
+                        }
                     }
                 }
             }

@@ -25,11 +25,24 @@ impl Default for OptionSpec {
     }
 }
 
+#[derive(PartialEq)]
+pub enum FiniteDifferenceType {
+    Explicit,
+    Implicit,
+}
+
 // Define the CalcMethod enum
 #[derive(PartialEq)]
 pub enum CalcMethod {
     BackwardInduction,
     Combinatorial,
+    FiniteDifference {
+        kind: FiniteDifferenceType,
+        n_s: u32,
+        n_t: u32,
+        s_max: f64,
+        s_min: f64,
+    },
 }
 
 // Provide a default implementation for CalcMethod
