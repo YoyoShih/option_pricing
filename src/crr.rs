@@ -43,7 +43,7 @@ impl CRR {
         let payoff = match calc_method {
             CalcMethod::BackwardInduction => self.price_backward_induction(),
             CalcMethod::Combinatorial => self.price_combinatorial(),
-            CalcMethod::FiniteDifference { kind, n_s, n_t, s_max, s_min } => panic!("Finite Difference method is not implemented for CRR"),
+            CalcMethod::FiniteDifference { .. } => panic!("Finite Difference method is not implemented for CRR"),
         };
         payoff
     }
