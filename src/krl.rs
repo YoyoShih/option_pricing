@@ -3,13 +3,12 @@ use std::cmp;
 use std::rc::Rc;
 use std::vec;
 
+use nalgebra as na;
+use na::{DMatrix};
+
 use crate::utils::SignedLog;
 
-use crate::tree::Tree;
-use tree::OptionStyle;
-use tree::OptionType;
-use tree::CalcMethod;
-use tree::FiniteDifferenceType;
+use crate::tree::{Tree, OptionStyle, OptionType, CalcMethod, FiniteDifferenceType};
 
 // KRL: Karatzas-Ruf-Laplace model for option pricing
 // Define the KRL struct
@@ -55,9 +54,17 @@ impl KRL {
             CalcMethod::BackwardInduction => self.price_backward_induction(),
             CalcMethod::Combinatorial => self.price_combinatorial(),
             CalcMethod::FiniteDifference{ kind, n_s, n_t, s_max, s_min } => {
-                match kind {
-                    FiniteDifferenceType::Explicit => self.price_finite_difference_explicit(*n_s, *n_t, *s_min, *s_max),
-                    FiniteDifferenceType::Implicit => self.price_finite_difference_implicit(*n_s, *n_t, *s_min, *s_max),
+                let delta_s: f64 = (*s_max - *s_min) / *n_s as f64;
+                let delta_t: f64 = self.tree.t / *n_t as f64;
+                let sigma_sqr: f64 = self.tree.sigma.powi(2);
+                let s0_index: i32 = ((self.tree.s - *s_min) / delta_s).floor() as i32;
+                if delta_s * s0_index as f64 + *s_min != self.tree.s {
+                    panic!("Finite Difference method requires the initial stock price to be on the grid points");
+                } else {
+                    match kind {
+                        FiniteDifferenceType::Explicit => self.price_finite_difference_explicit(*n_s, *n_t, *s_max, *s_min, delta_s, delta_t, sigma_sqr, s0_index),
+                        FiniteDifferenceType::Implicit => self.price_finite_difference_implicit(*n_s, *n_t, *s_max, *s_min, delta_s, delta_t, sigma_sqr, s0_index),
+                    }
                 }
             },
         };
@@ -227,95 +234,101 @@ impl KRL {
 
     // Finite Difference pricing method
     // Explicit method
-    fn price_finite_difference_explicit(&self, n_s: u32, n_t: u32, s_min: f64, s_max: f64) -> f64 {
-        let delta_s: f64 = (s_max - s_min) / n_s as f64;
-        let delta_t: f64 = self.tree.t / n_t as f64;
-        let sigma_sqr: f64 = self.tree.sigma.powi(2);
-        let s0_index: i32 = ((self.tree.s - s_min) / delta_s).floor() as i32;
-
-        if delta_s * s0_index as f64 + s_min != self.tree.s {
-            panic!("Finite Difference method requires the initial stock price to be on the grid points");
-        } else {
-            match self.tree.option_spec.kind {
-                OptionType::Call => {
-                    match self.tree.option_spec.style {
-                        OptionStyle::European => {
-                            let r1: f64 = 1.0 / (1.0 + self.tree.r * delta_t);
-                            let r2: f64 = delta_t / (1.0 + self.tree.r * delta_t);
-                            let mut grid: Vec<Vec<f64>> = vec![vec![0.0; n_s as usize]; 3];
-                            for i in 0..n_s {
-                                grid[0][i as usize] = r2 * 0.5 * i as f64 * (-(self.tree.r - self.tree.q) + sigma_sqr * i as f64);
-                                grid[1][i as usize] = r1 * (1.0 - sigma_sqr * i.pow(2) as f64 * delta_t);
-                                grid[2][i as usize] = r2 * 0.5 * i as f64 * (self.tree.r - self.tree.q + sigma_sqr * i as f64);
-                            }
-                            let mut s_t: Vec<f64> = vec![0.0; (n_s + 1) as usize];
-                            let mut value: Vec<f64> = vec![0.0; (n_s + 1) as usize];
-                            for i in 0..=n_s {
-                                let curr = delta_s * i as f64 + s_min;
-                                s_t[i as usize] = f64::max((self.payoff)(curr, self.tree.x), 0.0);
-                            }
-                            for i in 0..n_t {
-                                value[0] = f64::max((self.payoff)(s_min, self.tree.x), 0.0);
-                                for j in 1..n_s {
-                                    value[j as usize] = grid[0][j as usize] * s_t[j as usize - 1] + grid[1][j as usize] * s_t[j as usize] + grid[2][j as usize] * s_t[j as usize + 1];
-                                }
-                                value[n_s as usize] = f64::max((self.payoff)(s_max, self.tree.x), 0.0);
-                                for j in 0..=n_s {
-                                    s_t[j as usize] = f64::max(value[j as usize], 0.0);
-                                }
-                            }
-                            return value[s0_index as usize];
-                        }
-                        OptionStyle::American => {
-                            panic!("Finite Difference Explicit method is not implemented for American Call in KRL");
-                        }
+    fn price_finite_difference_explicit(&self, n_s: u32, n_t: u32, s_max: f64, s_min: f64, delta_s: f64, delta_t: f64, sigma_sqr: f64, s0_index: i32) -> f64 {
+        let r1: f64 = 1.0 / (1.0 + self.tree.r * delta_t);
+        let r2: f64 = delta_t / (1.0 + self.tree.r * delta_t);
+        let mut grid: Vec<Vec<f64>> = vec![vec![0.0; n_s as usize]; 3];
+        for i in 0..n_s {
+            grid[0][i as usize] = r2 * 0.5 * i as f64 * (-(self.tree.r - self.tree.q) + sigma_sqr * i as f64);
+            grid[1][i as usize] = r1 * (1.0 - sigma_sqr * i.pow(2) as f64 * delta_t);
+            grid[2][i as usize] = r2 * 0.5 * i as f64 * (self.tree.r - self.tree.q + sigma_sqr * i as f64);
+        }
+        let mut value_next: Vec<f64> = vec![0.0; (n_s + 1) as usize];
+        let mut value_now: Vec<f64> = vec![0.0; (n_s + 1) as usize];
+        let mut s_t: Vec<f64> = vec![0.0; (n_s + 1) as usize];
+        for i in 0..=n_s {
+            s_t[i as usize] = delta_s * i as f64 + s_min;
+            value_next[i as usize] = f64::max((self.payoff)(s_t[i as usize], self.tree.x), 0.0);
+        }
+        for _ in 0..n_t {
+            value_now[0] = f64::max((self.payoff)(s_min, self.tree.x), 0.0);
+            for i in 1..n_s {
+                value_now[i as usize] = grid[0][i as usize] * value_next[i as usize - 1] + grid[1][i as usize] * value_next[i as usize] + grid[2][i as usize] * value_next[i as usize + 1];
+            }
+            value_now[n_s as usize] = f64::max((self.payoff)(s_max, self.tree.x), 0.0);
+            for i in 0..=n_s {
+                match self.tree.option_spec.style {
+                    OptionStyle::European => {
+                        value_next[i as usize] = f64::max(value_now[i as usize], 0.0);
                     }
-                }
-                OptionType::Put => {
-                    match self.tree.option_spec.style {
-                        OptionStyle::European => {
-                            panic!("Finite Difference Explicit method is not implemented for European Put in KRL");
-                        }
-                        OptionStyle::American => {
-                            panic!("Finite Difference Explicit method is not implemented for American Put in KRL");
-                        }
+                    OptionStyle::American => {
+                        value_next[i as usize] = f64::max(value_now[i as usize], (self.payoff)(s_t[i as usize], self.tree.x));
                     }
                 }
             }
         }
+        value_now[s0_index as usize]
     }
 
-    // Implicit method (not implemented)
-    fn price_finite_difference_implicit(&self, n_s: u32, n_t: u32, s_max: f64, s_min: f64) -> f64 {
-        let delta_s: f64 = (s_max - s_min) / n_s as f64;
-        let delta_t: f64 = self.tree.t / n_t as f64;
-        let sigma_sqr: f64 = self.tree.sigma * self.tree.sigma;
-        let s0_index: i32 = ((self.tree.s - s_min) / delta_s).floor() as i32;
+    // Implicit method
+    fn price_finite_difference_implicit(&self, n_s: u32, n_t: u32, s_max: f64, s_min: f64, delta_s: f64, delta_t: f64, sigma_sqr: f64, s0_index: i32) -> f64 {
+        match self.tree.option_spec.style {
+            OptionStyle::European => {
+                let mut matrix: DMatrix<f64> = DMatrix::zeros(n_s as usize + 1, n_s as usize + 1);
+                matrix[(0, 0)] = 1.0 + delta_t * (sigma_sqr * (n_s as f64).powi(2) + self.tree.r); // B
+                matrix[(0, 1)] = 0.5 * (n_s as f64) * delta_t * (self.tree.r - self.tree.q - sigma_sqr * (n_s as f64)); // A
+                for i in 1..n_s {
+                    matrix[(i as usize, i as usize - 1)] = 0.5 * ((n_s - i) as f64) * delta_t * (-(self.tree.r - self.tree.q) - sigma_sqr * ((n_s - i) as f64)); // C
+                    matrix[(i as usize, i as usize)] = 1.0 + delta_t * (sigma_sqr * ((n_s - i) as f64).powi(2) + self.tree.r); // B
+                    matrix[(i as usize, i as usize + 1)] = 0.5 * ((n_s - i) as f64) * delta_t * (self.tree.r - self.tree.q - sigma_sqr * ((n_s - i) as f64)); // A
+                }
+                matrix[(n_s as usize, n_s as usize - 1)] = 0.5 * delta_t * (-(self.tree.r - self.tree.q)); // C
+                matrix[(n_s as usize, n_s as usize)] = 1.0 + delta_t * self.tree.r; // B
+                let inv_matrix: DMatrix<f64> = matrix.try_inverse().expect("Matrix inversion failed in Implicit Finite Difference method");
 
-        if delta_s * s0_index as f64 + s_min != self.tree.s {
-            panic!("Finite Difference method requires the initial stock price to be on the grid points");
-        } else {
-            match self.tree.option_spec.kind {
-                OptionType::Call => {
-                    match self.tree.option_spec.style {
-                        OptionStyle::European => {
-                            panic!("Finite Difference Implicit method is not implemented for European Call in KRL");
-                        }
-                        OptionStyle::American => {
-                            panic!("Finite Difference Implicit method is not implemented for American Call in KRL");
-                        }
+                let mut value: DMatrix<f64> = DMatrix::zeros(n_s as usize + 1, 1);
+                for i in 0..=n_s {
+                    let s_t: f64 = delta_s * ((n_s - i) as f64) + s_min;
+                    value[(i as usize, 0)] = f64::max((self.payoff)(s_t, self.tree.x), 0.0);
+                }
+                for _ in 0..n_t {
+                    value[(0, 0)] = f64::max((self.payoff)(s_max, self.tree.x), 0.0);
+                    value[(n_s as usize, 0)] = f64::max((self.payoff)(s_min, self.tree.x), 0.0);
+                    value = &inv_matrix * &value;
+                    for i in 1..n_s {
+                        value[(i as usize, 0)] = f64::max(value[(i as usize, 0)], 0.0);
                     }
                 }
-                OptionType::Put => {
-                    match self.tree.option_spec.style {
-                        OptionStyle::European => {
-                            panic!("Finite Difference Implicit method is not implemented for European Put in KRL");
-                        }
-                        OptionStyle::American => {
-                            panic!("Finite Difference Implicit method is not implemented for American Put in KRL");
-                        }
+                value[((n_s - s0_index as u32) as usize, 0)]
+            },
+            OptionStyle::American => {
+                let mut matrix: DMatrix<f64> = DMatrix::zeros(n_s as usize - 1, n_s as usize - 1);
+                matrix[(0, 0)] = 1.0 + delta_t * (sigma_sqr * (n_s as f64 - 1.0).powi(2) + self.tree.r); // B
+                matrix[(0, 1)] = 0.5 * (n_s as f64 - 1.0) * delta_t * (self.tree.r - self.tree.q - sigma_sqr * (n_s as f64 - 1.0)); // A
+                for i in 1..(n_s - 2) {
+                    matrix[(i as usize, i as usize - 1)] = 0.5 * ((n_s - 1 - i) as f64) * delta_t * (-(self.tree.r - self.tree.q) - sigma_sqr * ((n_s - 1 - i) as f64)); // C
+                    matrix[(i as usize, i as usize)] = 1.0 + delta_t * (sigma_sqr * ((n_s - 1 - i) as f64).powi(2) + self.tree.r); // B
+                    matrix[(i as usize, i as usize + 1)] = 0.5 * ((n_s - 1 - i) as f64) * delta_t * (self.tree.r - self.tree.q - sigma_sqr * ((n_s - 1 - i) as f64)); // A
+                }
+                matrix[(n_s as usize - 2, n_s as usize- 3)] = 0.5 * delta_t * (-(self.tree.r - self.tree.q) - sigma_sqr); // C
+                matrix[(n_s as usize - 2, n_s as usize- 2)] = 1.0 + delta_t * (sigma_sqr + self.tree.r); // B
+                let inv_matrix: DMatrix<f64> = matrix.try_inverse().expect("Matrix inversion failed in Implicit Finite Difference method");
+
+                let mut s_t: DMatrix<f64> = DMatrix::zeros(n_s as usize - 1, 1);
+                let mut value: DMatrix<f64> = DMatrix::zeros(n_s as usize - 1, 1);
+                for i in 0..(n_s - 1) {
+                    s_t[(i as usize, 0)] = delta_s * ((n_s - 1 - i) as f64) + s_min;
+                    value[(i as usize, 0)] = f64::max((self.payoff)(s_t[(i as usize, 0)], self.tree.x), 0.0);
+                }
+                for _ in 0..n_t {
+                    value[(0, 0)] = f64::max((self.payoff)(s_max, self.tree.x), 0.0);
+                    value = &inv_matrix * &value;
+                    for i in 1..(n_s - 1) {
+                        value[(i as usize, 0)] = f64::max(value[(i as usize, 0)], (self.payoff)(s_t[(i as usize, 0)], self.tree.x));
+                        value[(i as usize, 0)] = f64::max(value[(i as usize, 0)], 0.0);
                     }
                 }
+                value[((n_s - 1 - s0_index as u32) as usize, 0)]
             }
         }
     }

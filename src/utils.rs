@@ -1,3 +1,4 @@
+// SignedLog struct and its operations for log-space arithmetic
 #[derive(Copy, Clone)]
 pub struct SignedLog {
     pub sign: i8, // 1 or -1

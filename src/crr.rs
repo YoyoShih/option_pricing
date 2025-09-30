@@ -1,9 +1,7 @@
 use std::f64;
 use std::rc::Rc;
 
-use crate::tree::Tree;
-use tree::OptionStyle;
-use tree::CalcMethod;
+use crate::tree::{Tree, OptionStyle, CalcMethod};
 
 // CRR: Cox-Ross-Rubinstein model for option pricing
 // Define the CRR struct
